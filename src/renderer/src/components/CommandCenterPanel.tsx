@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
+import { shouldSwitchOnClick } from './cardClickTarget';
 import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
 import { PtyTerminalView } from './PtyTerminalView';
@@ -680,18 +681,21 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           const isSelected = a.id === selectedId;
           const isHovered = hoveredCardId === a.id;
           // The WHOLE card selects its agent. Clicks that originate from an
-          // interactive descendant (the name button, model/engine selects,
-          // token-limit editor, restart/apply buttons, links) run their own
-          // action and must NOT also switch the active agent — so ignore any
-          // click whose target sits inside one. This one guard covers every
-          // control in the card today and any added later.
+          // interactive descendant (model/engine selects, token-limit editor,
+          // restart/apply buttons, links) run their own action and must NOT
+          // also switch the active agent. `closest()` also matches the card
+          // itself (it carries role="button"), so shouldSwitchOnClick treats a
+          // self-match as "card body" and only bails on a descendant control —
+          // one guard that covers every control in the card today and any
+          // added later.
           const cardBorder = isSelected
             ? 'inset 0 0 0 1px var(--cth-ink-300), 0 0 0 2px var(--cth-ink-900)'
             : `inset 0 0 0 1px var(--cth-ink-${isHovered ? '700' : '300'})`;
           const activateCard = (e: React.SyntheticEvent) => {
-            if ((e.target as HTMLElement).closest(
+            const hit = (e.target as HTMLElement).closest(
               'button, select, input, textarea, a, [role="button"]'
-            )) return;
+            );
+            if (!shouldSwitchOnClick(hit, e.currentTarget)) return;
             select(a.id);
           };
           return (
