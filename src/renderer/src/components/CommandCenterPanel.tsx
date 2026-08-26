@@ -340,8 +340,11 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   const agents = useStore((s) => s.agents);
   const select = useStore((s) => s.select);
+  const selectedId = useStore((s) => s.selectedId);
   const updateAgent = useStore((s) => s.updateAgent);
   const toolCounts = useStore((s) => s.toolCounts);
+  // Which roster card the pointer is over — drives the whole-card hover cue.
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   // Live OpenTelemetry per agent — merged into each agent card below (the old
   // standalone Fleet tab folded in here so the roster shows identity + controls
   // AND live cost/usage in one place).
@@ -674,11 +677,43 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           const rateLabel = rateVal > 0 ? `${fmtTokens(rateVal)}/m` : 'rate';
           const currentModelKnown = modelsForProvider(agentProvider)
             .some((model) => model.id === a.model);
+          const isSelected = a.id === selectedId;
+          const isHovered = hoveredCardId === a.id;
+          // The WHOLE card selects its agent. Clicks that originate from an
+          // interactive descendant (the name button, model/engine selects,
+          // token-limit editor, restart/apply buttons, links) run their own
+          // action and must NOT also switch the active agent — so ignore any
+          // click whose target sits inside one. This one guard covers every
+          // control in the card today and any added later.
+          const cardBorder = isSelected
+            ? 'inset 0 0 0 1px var(--cth-ink-300), 0 0 0 2px var(--cth-ink-900)'
+            : `inset 0 0 0 1px var(--cth-ink-${isHovered ? '700' : '300'})`;
+          const activateCard = (e: React.SyntheticEvent) => {
+            if ((e.target as HTMLElement).closest(
+              'button, select, input, textarea, a, [role="button"]'
+            )) return;
+            select(a.id);
+          };
           return (
-          <div key={a.id} style={{
+          <div
+            key={a.id}
+            role="button"
+            tabIndex={0}
+            aria-current={isSelected ? 'true' : undefined}
+            aria-label={`Switch to ${a.name}`}
+            onClick={activateCard}
+            onKeyDown={(e) => {
+              // Only the card itself responds to Enter/Space — a keypress that
+              // bubbles up from a focused inner control keeps its own behaviour.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(a.id); }
+            }}
+            onMouseEnter={() => setHoveredCardId(a.id)}
+            onMouseLeave={() => setHoveredCardId((h) => (h === a.id ? null : h))}
+            style={{
             display: 'flex', flexDirection: 'column', gap: 4,
-            padding: 6, marginBottom: 6,
-            background: armed ? 'var(--cth-coral-light)' : 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
+            padding: 6, marginBottom: 6, cursor: 'pointer',
+            background: armed ? 'var(--cth-coral-light)' : 'var(--cth-paper-100)', boxShadow: cardBorder
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{
@@ -688,13 +723,14 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               }}>
                 <SpritePortrait character={a.character} scale={1} />
               </div>
-              <button
-                onClick={() => select(a.id)}
+              {/* The whole card selects this agent, so the name is a plain label
+                  (not a nested <button>, which would be invalid inside the
+                  card's role="button"). A click here bubbles to the card. */}
+              <span
                 style={{
-                  border: 'none', background: 'transparent', cursor: 'pointer', padding: 0,
                   fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)'
                 }}
-              >{a.name}{a.isGod ? ' (god)' : ''}</button>
+              >{a.name}{a.isGod ? ' (god)' : ''}</span>
               <PixelBadge status={armed ? 'looping' : a.status} />
               {armed && <span title={breaker?.reason} style={{ color: 'var(--cth-coral)', fontSize: 12 }}>⚠</span>}
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-500)' }}>
