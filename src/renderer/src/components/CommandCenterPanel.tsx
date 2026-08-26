@@ -484,7 +484,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         provider,
         isGod: a.isGod,
         isAssistant: a.isAssistant,
-        role: roleForHiveSpawn(a)
+        role: roleForHiveSpawn(a),
+        // Reapply the agent's granted cross-repo access on every respawn.
+        addDirs: a.addDirs
       };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
@@ -536,6 +538,42 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     } finally {
       setRestarting(null);
     }
+  };
+
+  // Grant a forever-running agent scoped access to ANOTHER repo it isn't homed
+  // in, so it can take cross-repo work in its own terminal instead of the office
+  // spawning a fresh ephemeral worker. The human approves the exact folder (the
+  // native picker + a confirm ARE the approval), it is persisted on the agent as
+  // an `--add-dir` grant, and the agent restarts & continues so the access takes
+  // effect on its live session without losing the thread.
+  const grantRepo = async (a: Agent) => {
+    const picked = await window.cth.chooseFolder();
+    if (!picked.ok) return;
+    const dir = picked.path;
+    if (dir === a.cwd || (a.addDirs ?? []).includes(dir)) {
+      window.alert(`${a.name} already has access to\n${dir}`);
+      return;
+    }
+    const ok = window.confirm(
+      `Grant ${a.name} access to:\n\n${dir}\n\n` +
+        `${a.name} will be able to read and write files in that repository. ` +
+        `This restarts & continues ${a.name} so the access takes effect.`
+    );
+    if (!ok) return;
+    const next = [...(a.addDirs ?? []), dir];
+    updateAgent(a.id, { addDirs: next });
+    // Pass the patched agent so the respawn carries the new grant immediately
+    // (the store update above is async and would otherwise be a turn behind).
+    await restartWithModel({ ...a, addDirs: next }, a.model, { resume: true, resumeOptional: true });
+  };
+
+  // Revoke a previously granted repo. Same restart & continue applies the change.
+  const revokeRepo = async (a: Agent, dir: string) => {
+    const ok = window.confirm(`Revoke ${a.name}'s access to:\n\n${dir}\n\nThis restarts & continues ${a.name}.`);
+    if (!ok) return;
+    const next = (a.addDirs ?? []).filter((d) => d !== dir);
+    updateAgent(a.id, { addDirs: next });
+    await restartWithModel({ ...a, addDirs: next }, a.model, { resume: true, resumeOptional: true });
   };
 
   // ALL human dispatch flows through the god — never directly into a worker's
@@ -833,6 +871,44 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                 </PixelButton>
               </>}
             </div>
+            )}
+            {/* Cross-repo access grants (Claude only — the mechanism is Claude
+                Code's `--add-dir`). Lets a forever-running agent take work in a
+                repo it isn't homed in, human-approved per folder, instead of the
+                office spawning a fresh ephemeral worker. */}
+            {agentProvider === 'claude' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: 'var(--cth-ink-500)', flexShrink: 0 }}>repos:</span>
+                <span title={a.cwd} style={{
+                  fontSize: 11, lineHeight: '16px', padding: '0 4px', flexShrink: 0,
+                  background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', color: 'var(--cth-ink-700)'
+                }}>{shortRepoPath(a.cwd)} · home</span>
+                {(a.addDirs ?? []).map((dir) => (
+                  <span key={dir} title={dir} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    fontSize: 11, lineHeight: '16px', padding: '0 2px 0 4px', flexShrink: 0,
+                    background: 'var(--cth-paper-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', color: 'var(--cth-ink-700)'
+                  }}>
+                    {shortRepoPath(dir)}
+                    <button
+                      title={`Revoke ${a.name}'s access to ${dir} (restarts & continues)`}
+                      disabled={restarting === a.id}
+                      onClick={() => revokeRepo(a, dir)}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '0 2px', color: 'var(--cth-ink-500)', fontSize: 12, lineHeight: '16px' }}
+                    >×</button>
+                  </span>
+                ))}
+                <PixelButton
+                  variant="secondary"
+                  size="sm"
+                  disabled={restarting === a.id}
+                  onClick={() => grantRepo(a)}
+                >
+                  <span title="Grant this agent scoped access to another repository — you approve the folder — then it restarts & continues with that repo added (--add-dir), so it can work there without losing its thread">
+                    grant repo access…
+                  </span>
+                </PixelButton>
+              </div>
             )}
             {restartErrors[a.id] && (
               <div style={{ fontSize: 11, color: 'var(--cth-coral)' }}>
@@ -1153,6 +1229,13 @@ function fmtTokens(n: number): string {
   if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${+(n / 1e3).toFixed(1)}K`;
   return String(Math.round(n));
+}
+
+/** Compact a repo path to its last two segments (…/parent/repo) for a chip; the
+ *  full path stays available as the element's title. */
+function shortRepoPath(p: string): string {
+  const parts = p.replace(/[/\\]+$/, '').split(/[/\\]/).filter(Boolean);
+  return parts.length <= 2 ? p : `…/${parts.slice(-2).join('/')}`;
 }
 
 /** Per-agent token-limit control (top-right of each agent card). Shows the

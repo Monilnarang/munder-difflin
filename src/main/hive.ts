@@ -140,6 +140,12 @@ export interface AgentMeta {
   /** Michael's prep assistant — enriches prompts and forwards them to Michael.
    *  Send-only: excluded from broadcast fan-out so it never drains an inbox. */
   isAssistant?: boolean;
+  /** Extra repositories this persistent agent has been granted scoped access to,
+   *  each passed to Claude Code as `--add-dir <path>` at spawn (see
+   *  src/shared/addDirArgs.ts). Lets a forever-running agent take work in a repo
+   *  it isn't homed in without spawning a fresh worker — the human approves each
+   *  grant. Claude-only; other CLIs ignore it. */
+  addDirs?: string[];
 }
 
 export interface RegistryAgent extends AgentMeta {

@@ -93,6 +93,13 @@ export interface Agent {
   /** When git isolation is enabled, the dedicated worktree path the agent runs
    *  in (its own `agent/<id>` branch); undefined for shared-cwd agents. */
   worktreePath?: string;
+  /** Extra repositories this persistent agent has been granted scoped access to
+   *  (each an absolute directory). Passed to Claude Code as `--add-dir <path>` on
+   *  every (re)spawn so a forever-running agent can take work in a repo it isn't
+   *  homed in — the human approves each grant from the roster card — instead of
+   *  spawning a fresh worker. Durable: persisted with the agent and reapplied on
+   *  restart & continue, revive, and restore. Claude-only. */
+  addDirs?: string[];
   /** Live context size of the agent's Claude session (tokens), polled from its
    *  transcript. Drives the context gauge on the agent card. */
   contextTokens?: number;

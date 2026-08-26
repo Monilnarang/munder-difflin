@@ -61,6 +61,7 @@ import * as integrations from './integrations';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { buildWorkerLaunch } from './workerLaunch';
+import { addDirArgs } from '../shared/addDirArgs';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
 import { inboxNudgeText } from '../shared/hiveNudge';
@@ -2749,6 +2750,13 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         resumeNotFound = true;
       }
     }
+    // Scoped cross-repo access (forever-running agents): grant this persistent
+    // agent read/write to extra repos it isn't homed in via Claude Code's own
+    // `--add-dir`, one per human-approved directory. addDirArgs drops blanks,
+    // drops paths that no longer exist (a --add-dir to a missing path makes
+    // Claude error at boot), and de-dupes — so this is idempotent across a
+    // restart & continue that rebuilds the same argv.
+    args.push(...addDirArgs(opts.hive.addDirs, args, (p) => existsSync(p)));
     opts.args = args;
   }
   // Idempotent session resume on respawn (#6.6a) — provider-aware: Claude

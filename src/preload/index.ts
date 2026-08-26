@@ -52,6 +52,11 @@ export interface HiveAgentMeta {
   isGod?: boolean;
   /** Michael's prep assistant — send-only; enriches prompts and forwards them. */
   isAssistant?: boolean;
+  /** Extra repositories this persistent agent has been granted scoped access to;
+   *  each becomes a Claude Code `--add-dir <path>` arg at spawn. Lets a
+   *  forever-running agent work in a repo it isn't homed in (human-approved per
+   *  grant) instead of spawning a fresh worker. Claude-only. */
+  addDirs?: string[];
 }
 
 export interface HiveMessage {
